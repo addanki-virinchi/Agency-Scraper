@@ -66,24 +66,71 @@ def haversine(lat1, lon1, lat2, lon2):
 
 
 # ---------------------------
+# Load existing URLs from CSV files for deduplication
+# ---------------------------
+def load_existing_urls(all_urls_csv, filtered_csv):
+    """Load existing URLs from both CSV files to avoid duplicates"""
+    existing_urls = set()
+
+    # Load from all_scraped_urls.csv
+    try:
+        df_all = pd.read_csv(all_urls_csv)
+        if 'url' in df_all.columns:
+            urls_from_all = set(df_all['url'].dropna())
+            existing_urls.update(urls_from_all)
+            print(f"📋 Loaded {len(urls_from_all)} existing URLs from {all_urls_csv}")
+        else:
+            print(f"⚠️ No 'url' column found in {all_urls_csv}")
+    except FileNotFoundError:
+        print(f"📄 {all_urls_csv} not found - will create new file")
+    except Exception as e:
+        print(f"⚠️ Error reading {all_urls_csv}: {str(e)}")
+
+    # Load from filtered_places.csv
+    try:
+        df_filtered = pd.read_csv(filtered_csv)
+        if 'url' in df_filtered.columns:
+            urls_from_filtered = set(df_filtered['url'].dropna())
+            existing_urls.update(urls_from_filtered)
+            print(f"🎯 Loaded {len(urls_from_filtered)} existing URLs from {filtered_csv}")
+        else:
+            print(f"⚠️ No 'url' column found in {filtered_csv}")
+    except FileNotFoundError:
+        print(f"📄 {filtered_csv} not found - will create new file")
+    except Exception as e:
+        print(f"⚠️ Error reading {filtered_csv}: {str(e)}")
+
+    print(f"🔍 Total unique URLs already processed: {len(existing_urls)}")
+    return existing_urls
+
+
+# ---------------------------
 # Scrape Google Maps for each search term (collect ALL URLs)
 # ---------------------------
-def scrape_all_places(search_item, search_lat, search_lon, all_urls_csv="all_scraped_urls.csv"):
-    """Scrape all URLs with incremental CSV writing and detailed debugging"""
+def scrape_all_places(search_item, search_lat, search_lon, all_urls_csv="all_scraped_urls.csv", filtered_csv="filtered_places.csv"):
+    """Scrape all URLs with incremental CSV writing, deduplication, and detailed debugging"""
     urls_data = []
     driver = uc.Chrome(headless=False)
 
-    # Initialize CSV file with headers if it doesn't exist
-    try:
-        pd.read_csv(all_urls_csv)
-    except FileNotFoundError:
-        # Create CSV with headers
-        headers_df = pd.DataFrame(columns=[
-            "search_item", "search_lat", "search_lon", "url",
-            "url_lat", "url_lon", "distance_km", "within_7km"
-        ])
-        headers_df.to_csv(all_urls_csv, index=False)
-        print(f"📄 Created new CSV file: {all_urls_csv}")
+    # Load existing URLs for deduplication
+    existing_urls = load_existing_urls(all_urls_csv, filtered_csv)
+
+    # Initialize CSV files with headers if they don't exist
+    for csv_file in [all_urls_csv, filtered_csv]:
+        try:
+            pd.read_csv(csv_file)
+        except FileNotFoundError:
+            # Create CSV with headers
+            headers_df = pd.DataFrame(columns=[
+                "search_item", "search_lat", "search_lon", "url",
+                "url_lat", "url_lon", "distance_km", "within_7km"
+            ])
+            headers_df.to_csv(csv_file, index=False)
+            print(f"📄 Created new CSV file: {csv_file}")
+
+    # Counters for logging
+    new_urls_count = 0
+    skipped_urls_count = 0
 
     try:
         query = f"https://www.google.com/maps/search/{search_item}/@{search_lat},{search_lon},13000m"
@@ -155,9 +202,17 @@ def scrape_all_places(search_item, search_lat, search_lon, all_urls_csv="all_scr
                     url = place.get_attribute("href")
                     if url and url not in urls:
                         urls.add(url)
-                        new_urls_this_scroll += 1
 
-                        print(f"    🔗 Processing URL #{len(urls)}: {url[:80]}...")
+                        # Check if URL already exists in previous runs
+                        if url in existing_urls:
+                            skipped_urls_count += 1
+                            print(f"    ⏭️ Skipping URL #{len(urls)} (already processed): {url[:80]}...")
+                            continue
+
+                        new_urls_this_scroll += 1
+                        new_urls_count += 1
+
+                        print(f"    🔗 Processing NEW URL #{len(urls)}: {url[:80]}...")
 
                         url_lat, url_lon = extract_coordinates_from_url(url)
 
@@ -178,8 +233,15 @@ def scrape_all_places(search_item, search_lat, search_lon, all_urls_csv="all_scr
 
                             urls_data.append(url_data)
 
-                            # Append to CSV immediately
+                            # Add to existing URLs set to prevent duplicates within this session
+                            existing_urls.add(url)
+
+                            # Append to all_scraped_urls.csv immediately
                             pd.DataFrame([url_data]).to_csv(all_urls_csv, mode='a', header=False, index=False)
+
+                            # Also append to filtered CSV if within 7km
+                            if within_7km == "YES":
+                                pd.DataFrame([url_data]).to_csv(filtered_csv, mode='a', header=False, index=False)
 
                             print(f"    📊 Distance: {distance:.2f} km | Within 7km: {within_7km}")
                         else:
@@ -212,7 +274,10 @@ def scrape_all_places(search_item, search_lat, search_lon, all_urls_csv="all_scr
     finally:
         driver.quit()
 
-    print(f"✅ Total URLs scraped for '{search_item}': {len(urls_data)}")
+    print(f"✅ Search '{search_item}' completed:")
+    print(f"   - New URLs processed: {new_urls_count}")
+    print(f"   - URLs skipped (duplicates): {skipped_urls_count}")
+    print(f"   - Total URLs found this session: {len(urls_data)}")
     return urls_data
 
 
@@ -244,18 +309,8 @@ def main():
         print(f"❌ Error: Missing required columns: {missing_columns}")
         return
 
-    # Initialize filtered CSV file
-    try:
-        pd.read_csv(output_csv)
-        print(f"📄 Appending to existing filtered CSV: {output_csv}")
-    except FileNotFoundError:
-        # Create filtered CSV with headers
-        headers_df = pd.DataFrame(columns=[
-            "search_item", "search_lat", "search_lon", "url",
-            "url_lat", "url_lon", "distance_km", "within_7km"
-        ])
-        headers_df.to_csv(output_csv, index=False)
-        print(f"📄 Created new filtered CSV file: {output_csv}")
+    print(f"🚀 Starting scraping process...")
+    print(f"📄 Output files: {all_urls_csv} (all URLs), {output_csv} (filtered URLs)")
 
     total_scraped = 0
     total_filtered = 0
@@ -278,21 +333,16 @@ def main():
         print(f"\n🔍 Searching for: {search_item}")
         print(f"📍 Search center: {search_lat}, {search_lon}")
 
-        # Scrape all URLs with incremental writing to all_scraped_urls.csv
-        all_urls_for_item = scrape_all_places(search_item, search_lat, search_lon, all_urls_csv)
+        # Scrape all URLs with incremental writing to both CSV files
+        all_urls_for_item = scrape_all_places(search_item, search_lat, search_lon, all_urls_csv, output_csv)
 
-        # Filter URLs with distance <= 7 km and append to filtered CSV
-        filtered_count = 0
-        for url_data in all_urls_for_item:
-            if url_data['within_7km'] == 'YES':
-                # Append to filtered CSV immediately
-                pd.DataFrame([url_data]).to_csv(output_csv, mode='a', header=False, index=False)
-                filtered_count += 1
+        # Count filtered results from this search
+        filtered_count = sum(1 for url_data in all_urls_for_item if url_data['within_7km'] == 'YES')
 
         total_scraped += len(all_urls_for_item)
         total_filtered += filtered_count
 
-        print(f"✅ Found {filtered_count} places within 7 km (out of {len(all_urls_for_item)} total places)")
+        print(f"✅ Found {filtered_count} places within 7 km (out of {len(all_urls_for_item)} total NEW places)")
 
     # Final summary
     print(f"\n📊 FINAL SUMMARY:")
