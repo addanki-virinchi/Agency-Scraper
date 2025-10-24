@@ -133,7 +133,7 @@ def scrape_all_places(search_item, search_lat, search_lon, all_urls_csv="all_scr
     skipped_urls_count = 0
 
     try:
-        query = f"https://www.google.com/maps/search/{search_item}/@{search_lat},{search_lon},13000m"
+        query = f'https://www.google.com/maps/search/"{search_item}"/@{search_lat},{search_lon},13000m'
         print(f"🌐 Loading: {query}")
         driver.get(query)
         time.sleep(5)
