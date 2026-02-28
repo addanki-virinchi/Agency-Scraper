@@ -336,7 +336,7 @@ def scrape_data(url, driver, wait):
 def main():
     # Read URLs from CSV file
     try:
-        df = pd.read_csv('search_4.csv')  # Replace with your CSV file name
+        df = pd.read_csv('Coffee_Dublin.csv')  # Replace with your CSV file name
         urls = df['URL'].tolist()  # Assuming 'URL' is the column name
     except Exception as e:
         print(f"Error reading CSV file: {str(e)}")
@@ -371,7 +371,7 @@ def main():
         # Save results to CSV
         try:
             df_results = pd.DataFrame(results)
-            df_results.to_csv('search_4_op.csv', index=False, columns=['URL', 'Name', 'Address', 'Website', 'Phone'])
+            df_results.to_csv('Coffee_Dublin_op.csv', index=False, columns=['URL', 'Name', 'Address', 'Website', 'Phone'])
 
             print("Results saved to output.csv")
         except Exception as e:

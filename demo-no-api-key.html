@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Maps Scroll-to-Zoom Demo (No API Key Required)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        
+        .header {
+            background-color: #4285f4;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .content {
+            padding: 20px;
+            height: 200px;
+            overflow-y: auto;
+            background-color: #f5f5f5;
+        }
+        
+        .map-container {
+            position: relative;
+            height: 600px;
+            width: 100%;
+            border: 2px solid #ddd;
+            margin-top: 20px;
+            background-color: #e0e0e0;
+            overflow: hidden;
+        }
+        
+        #map {
+            height: 100%;
+            width: 100%;
+            position: relative;
+            background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%),
+                        linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
+                        linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
+                        linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        
+        .instructions {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            z-index: 1000;
+            max-width: 300px;
+        }
+        
+        .zoom-indicator {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 8px 12px;
+            border-radius: 20px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            z-index: 1000;
+            font-weight: bold;
+            display: none;
+        }
+        
+        .demo-marker {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background-color: #ff4444;
+            border: 2px solid white;
+            border-radius: 50% 50% 50% 0;
+            transform: rotate(-45deg);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+        
+        .demo-marker:hover {
+            transform: rotate(-45deg) scale(1.2);
+        }
+        
+        .demo-marker::after {
+            content: '';
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: white;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        .api-notice {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 15px;
+            margin: 20px;
+            border-radius: 5px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Google Maps Scroll-to-Zoom Demo</h1>
+    </div>
+    
+    <div class="api-notice">
+        <strong>Demo Mode:</strong> This is a demonstration of the scroll-to-zoom functionality without requiring a Google Maps API key.
+        To use with actual Google Maps, please configure your API key in the main implementation file.
+    </div>
+    
+    <div class="content">
+        <h2>Scrollable Content Area</h2>
+        <p>This is a scrollable content area to demonstrate that the map's scroll-to-zoom functionality doesn't interfere with the main page scrolling.</p>
+        <p>Try scrolling this content area with your mouse wheel - it should work normally.</p>
+        
+        <h3>Instructions:</h3>
+        <ul>
+            <li>Hover your mouse over the map below</li>
+            <li>Use your mouse wheel or trackpad to zoom in and out</li>
+            <li>The map will zoom smoothly without affecting the page scroll</li>
+            <li>When your cursor is outside the map, normal page scrolling will work</li>
+        </ul>
+        
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>
+        
+        <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
+        
+        <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.</p>
+    </div>
+    
+    <div class="map-container">
+        <div class="instructions">
+            <strong>Scroll to Zoom:</strong><br>
+            Hover over the map and use your mouse wheel or trackpad to zoom in and out smoothly.
+        </div>
+        <div class="zoom-indicator" id="zoomIndicator">Zoom: <span id="zoomLevel">10</span></div>
+        <div id="map">
+            <!-- Demo markers -->
+            <div class="demo-marker" style="top: 45%; left: 48%;" title="New Delhi"></div>
+            <div class="demo-marker" style="top: 40%; left: 52%;" title="Connaught Place"></div>
+            <div class="demo-marker" style="top: 50%; left: 45%;" title="India Gate"></div>
+            <div class="demo-marker" style="top: 60%; left: 40%;" title="Hauz Khas"></div>
+        </div>
+    </div>
+
+    <script>
+        let isMouseOverMap = false;
+        let zoomTimeout;
+        let smoothZoomAnimation = null;
+        let currentZoom = 10;
+        const mapElement = document.getElementById('map');
+        const zoomIndicator = document.getElementById('zoomIndicator');
+        const zoomLevelSpan = document.getElementById('zoomLevel');
+        const markers = document.querySelectorAll('.demo-marker');
+        
+        // Initialize demo
+        function initDemo() {
+            setupScrollHandling();
+            updateZoomIndicator();
+        }
+        
+        // Set up custom scroll handling
+        function setupScrollHandling() {
+            // Track mouse position over the map
+            mapElement.addEventListener('mouseenter', () => {
+                isMouseOverMap = true;
+                zoomIndicator.style.display = 'block';
+                updateZoomIndicator();
+            });
+            
+            mapElement.addEventListener('mouseleave', () => {
+                isMouseOverMap = false;
+                zoomIndicator.style.display = 'none';
+            });
+            
+            // Handle wheel events for smooth zooming
+            mapElement.addEventListener('wheel', handleWheelEvent, { passive: false });
+        }
+        
+        // Handle wheel events for smooth zooming
+        function handleWheelEvent(event) {
+            if (!isMouseOverMap) return;
+            
+            // Prevent default scroll behavior
+            event.preventDefault();
+            
+            // Clear any pending zoom animation
+            if (smoothZoomAnimation) {
+                clearTimeout(smoothZoomAnimation);
+            }
+            
+            // Determine zoom direction based on wheel delta
+            const delta = event.deltaY;
+            const zoomDirection = delta > 0 ? -1 : 1;
+            
+            // Calculate new zoom level
+            const newZoom = Math.max(1, Math.min(20, currentZoom + zoomDirection));
+            
+            // If zoom level would change, animate it
+            if (newZoom !== currentZoom) {
+                smoothZoomTo(newZoom);
+            }
+        }
+        
+        // Smooth zoom animation
+        function smoothZoomTo(targetZoom) {
+            const zoomStep = targetZoom > currentZoom ? 0.5 : -0.5;
+            
+            function animateZoom() {
+                if ((zoomStep > 0 && currentZoom < targetZoom) || 
+                    (zoomStep < 0 && currentZoom > targetZoom)) {
+                    
+                    currentZoom += zoomStep;
+                    updateZoomIndicator();
+                    updateMarkerSizes();
+                    
+                    smoothZoomAnimation = setTimeout(animateZoom, 50);
+                } else {
+                    // Ensure we reach the exact target zoom
+                    currentZoom = targetZoom;
+                    updateZoomIndicator();
+                    updateMarkerSizes();
+                    smoothZoomAnimation = null;
+                }
+            }
+            
+            animateZoom();
+        }
+        
+        // Update marker sizes based on zoom level
+        function updateMarkerSizes() {
+            const scaleFactor = 0.5 + (currentZoom / 20) * 1.5; // Scale from 0.5x to 2x
+            
+            markers.forEach(marker => {
+                const baseSize = 30;
+                const newSize = baseSize * scaleFactor;
+                marker.style.width = newSize + 'px';
+                marker.style.height = newSize + 'px';
+            });
+        }
+        
+        // Update the zoom indicator
+        function updateZoomIndicator() {
+            zoomLevelSpan.textContent = Math.round(currentZoom);
+        }
+        
+        // Handle trackpad gestures (pinch to zoom simulation)
+        document.addEventListener('gesturestart', function(e) {
+            if (isMouseOverMap) {
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('gesturechange', function(e) {
+            if (isMouseOverMap) {
+                e.preventDefault();
+                
+                // Calculate scale from gesture
+                const scale = e.scale;
+                
+                // Convert scale to zoom change
+                let newZoom = currentZoom;
+                if (scale > 1.05) {
+                    newZoom = Math.min(20, currentZoom + 1);
+                } else if (scale < 0.95) {
+                    newZoom = Math.max(1, currentZoom - 1);
+                }
+                
+                if (newZoom !== currentZoom) {
+                    smoothZoomTo(newZoom);
+                }
+            }
+        });
+        
+        document.addEventListener('gestureend', function(e) {
+            if (isMouseOverMap) {
+                e.preventDefault();
+            }
+        });
+        
+        // Initialize the demo when the page loads
+        window.addEventListener('load', initDemo);
+    </script>
+</body>
+</html>
